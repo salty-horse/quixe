@@ -40,6 +40,7 @@ compress_source(
     'lib/quixe.min.js', [
         'src/quixe/quixe.js',
         'src/quixe/gi_dispa.js',
+        'src/quixe/gi_blorb.js',
         'src/quixe/gi_load.js',
         ])
 
