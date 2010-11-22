@@ -55,6 +55,7 @@
  *     http://zcode.appspot.com/proxy/)
  *   vm: The game engine interface object. (default: Quixe)
  *   io: The display layer interface object. (default: Glk)
+ *   blorb: The Blorb interface object. (default: GiBlorb)
  *
  *   You can also include any of the display options used by the GlkOte
  *   library, such as gameport, windowport, spacing, ...
@@ -71,6 +72,7 @@ var all_options = {
     spacing: 4,      // default spacing between windows
     vm: Quixe,       // default game engine
     io: Glk,         // default display layer
+    blorb: GiBlorb,  // default Blorb access layer
     use_query_story: true, // use the ?story= URL parameter (if provided)
     default_story: null,   // story URL to use if not otherwise set
     set_page_title: true,  // set the window title to the game name
@@ -79,6 +81,26 @@ var all_options = {
 
 var gameurl = null;  /* The URL we are loading. */
 var metadata = {}; /* Title, author, etc -- loaded from Blorb */
+
+function parse_metadata(data) {
+    var dat = String.fromCharCode.apply(null, data);
+    /* works around Prototype's annoying habit of doing
+       something, I'm not sure what, with the <title> tag. */
+    dat = dat.replace(/<title>/gi, '<xtitle>');
+    dat = dat.replace(/<\/title>/gi, '</xtitle>');
+    var met = new Element('metadata').update(dat);
+    if (met.down('bibliographic')) {
+        var els = met.down('bibliographic').childElements();
+        var el, ix;
+        for (ix=0; ix<els.length; ix++) {
+            el = els[ix];
+            if (el.tagName.toLowerCase() == 'xtitle')
+                metadata.title = el.textContent;
+            else
+                metadata[el.tagName.toLowerCase()] = el.textContent;
+        }
+    }
+}
 
 /* Begin the loading process. This is what you call to start a game;
    it takes care of starting the Glk and Quixe modules, when the game
@@ -326,55 +348,6 @@ function absolutize(url) {
     return div.firstChild.href;
 }
 
-/* Look through a Blorb file (provided as a byte array) and return the
-   Glulx game file chunk (ditto). If no such chunk is found, returns 
-   null.
-
-   This also loads the IFID metadata into the metadata object.
-*/
-function unpack_blorb(image) {
-    var len = image.length;
-    var pos = 12;
-    var result = null;
-
-    while (pos < len) {
-        var chunktype = String.fromCharCode(image[pos+0], image[pos+1], image[pos+2], image[pos+3]);
-        pos += 4;
-        var chunklen = (image[pos+0] << 24) | (image[pos+1] << 16) | (image[pos+2] << 8) | (image[pos+3]);
-        pos += 4;
-
-        if (chunktype == "GLUL") {
-            result = image.slice(pos, pos+chunklen);
-        }
-        if (chunktype == "IFmd") {
-            var arr = image.slice(pos, pos+chunklen);
-            var dat = String.fromCharCode.apply(this, arr);
-            /* This works around Prototype's annoying habit of doing
-               something, I'm not sure what, with the <title> tag. */
-            dat = dat.replace(/<title>/gi, '<xtitle>');
-            dat = dat.replace(/<\/title>/gi, '</xtitle>');
-            var met = new Element('metadata').update(dat);
-            if (met.down('bibliographic')) {
-                var els = met.down('bibliographic').childElements();
-                var el, ix;
-                for (ix=0; ix<els.length; ix++) {
-                    el = els[ix];
-                    if (el.tagName.toLowerCase() == 'xtitle')
-                        metadata.title = el.textContent;
-                    else
-                        metadata[el.tagName.toLowerCase()] = el.textContent;
-                }
-            }
-        }
-
-        pos += chunklen;
-        if (pos & 1)
-            pos++;
-    }
-
-    return result;
-}
-
 /* Convert a byte string into an array of numeric byte values. */
 function decode_raw_text(str) {
     var arr = Array(str.length);
@@ -444,18 +417,35 @@ function start_game(image) {
         return;
     }
 
+    var exec;
+
+    // Image is a Blorb
     if (image[0] == 0x46 && image[1] == 0x4F && image[2] == 0x52 && image[3] == 0x4D) {
         try {
-            image = unpack_blorb(image);
+            GiBlorb.load_blorb(image);
         }
         catch (ex) {
             all_options.io.fatal_error("Blorb file could not be parsed: " + ex);
             return;
         }
-        if (!image) {
+
+        // Read metadata
+        metadata_chunk = GiBlorb.load_chunk_by_type("IFmd", 0);
+        if (metadata_chunk && metadata_chunk.data) {
+            parse_metadata(metadata_chunk.data);
+        }
+
+        var exec_res = GiBlorb.load_resource("Exec", 0);
+
+        if (exec_res == null || exec_res.type != "GLUL") {
             all_options.io.fatal_error("Blorb file contains no Glulx game!");
             return;
         }
+
+        exec = exec_res.data;
+
+    } else {
+        exec = image;
     }
 
     if (all_options.set_page_title) {
@@ -470,7 +460,7 @@ function start_game(image) {
     }
 
     /* Pass the game image file along to the VM engine. */
-    all_options.vm.prepare(image, all_options);
+    all_options.vm.prepare(exec, all_options);
 
     /* Now fire up the display library. This will take care of starting
        the VM engine, once the window is properly set up. */

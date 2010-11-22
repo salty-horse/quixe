@@ -741,7 +741,6 @@ function accept_one_content(arg) {
         win.curr_style = text_event.data;
 
         // Get out of the current hyperlink and style
-        // TODO
         if (win.curr_el.tagName == 'A') {
           win.curr_el = win.curr_el.up();
         }
