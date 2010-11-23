@@ -1360,10 +1360,10 @@ function gli_window_buffer_deaccumulate(win) {
                     conta.push({ });
                 }
             }
+
             if (arr !== undefined) {
                 if (!win.accumhyperlink) {
-                    arr.push(stylename);
-                    arr.push(ls[ix]);
+                    arr.push({ style:stylename, text:ls[ix] });
                 }
                 else {
                     arr.push({ style:stylename, text:ls[ix], hyperlink:win.accumhyperlink });

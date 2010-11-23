@@ -706,18 +706,11 @@ function accept_one_content(arg) {
          into a NBSP. */
       for (sx=0; sx<content.length; sx++) {
         var rdesc = content[sx];
-        var rstyle, rtext, rlink;
-        if (rdesc.length === undefined) {
-          rstyle = rdesc.style;
-          rtext = rdesc.text;
-          rlink = rdesc.hyperlink;
-        }
-        else {
-          rstyle = rdesc;
-          sx++;
-          rtext = content[sx];
-          rlink = undefined;
-        }
+
+        var rstyle = rdesc.style;
+        var rtext = rdesc.text;
+        var rlink = rdesc.hyperlink;
+
         var el = new Element('span',
           { 'class': 'Style_' + rstyle } );
         rtext = rtext.replace(regex_long_whitespace, func_long_whitespace);
