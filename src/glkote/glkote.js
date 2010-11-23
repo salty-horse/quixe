@@ -460,6 +460,12 @@ function accept_one_window(arg) {
     win.history = new Array();
     win.historypos = 0;
     $(windowport_id).insert(frameel);
+
+    // State variables for text buffers
+    win.curr_el = null; // Current element text will be appended to (always part of the last line)
+    win.curr_style = "Normal"; // Current style used
+    win.curr_hyperlink = null; // Current hyperlink used
+    win.ends_white = true; // Whether the last line ends with a whitespace
   }
   else {
     frameel = win.frameel;
@@ -604,21 +610,13 @@ function accept_one_content(arg) {
         lineel.update();
         for (sx=0; sx<content.length; sx++) {
           var rdesc = content[sx];
-          var rstyle, rtext, rlink;
-          if (rdesc.length === undefined) {
-            rstyle = rdesc.style;
-            rtext = rdesc.text;
-            rlink = rdesc.hyperlink;
-          }
-          else {
-            rstyle = rdesc;
-            sx++;
-            rtext = content[sx];
-            rlink = undefined;
-          }
+          var rstyle = rdesc.style;
+          var rtext = rdesc.text;
+          var rlink = rdesc.hyperlink;
+
           var el = new Element('span',
             { 'class': 'Style_' + rstyle } );
-          if (rlink == undefined) {
+          if (rlink == null) {
             insert_text(el, rtext);
           }
           else {
@@ -635,8 +633,7 @@ function accept_one_content(arg) {
   }
 
   if (win.type == 'buffer') {
-    /* Append the given lines onto the end of the buffer window. */
-    var text = arg.text;
+    var events = arg.text_events;
     var ix, sx;
 
     if (win.inputel) {
@@ -655,48 +652,28 @@ function accept_one_content(arg) {
     if (arg.clear) {
       win.frameel.update(); // remove all children
       win.topunseen = 0;
+      win.curr_el = null;
     }
 
-    /* Each line we receive has a flag indicating whether it *starts*
-       a new paragraph. (If the flag is false, the line gets appended
-       to the previous paragraph.)
-
-       We have to keep track of two flags per paragraph div. The blankpara
-       flag indicates whether this is a completely empty paragraph (a
-       blank line). We have to drop a NBSP into empty paragraphs --
-       otherwise they'd collapse -- and so this flag lets us distinguish
-       between an empty paragraph and one which truly contains a NBSP.
-       (The difference is, when you append data to a truly empty paragraph,
-       you have to delete the placeholder NBSP.)
-
-       The endswhite flag indicates whether the paragraph ends with a
-       space (or is completely empty). See below for why that's important. */
-
-    for (ix=0; ix<text.length; ix++) {
-      var textarg = text[ix];
-      var content = textarg.content;
-      var divel = null;
-      if (textarg.append) {
-        if (!content || !content.length)
-          continue;
-        divel = last_child_of(win.frameel);
-      }
-      if (divel == null) {
-        /* Create a new paragraph div */
-        divel = new Element('div', { 'class': 'BufferLine' })
-        divel.blankpara = true;
-        divel.endswhite = true;
+    // Create an initial paragraph
+    if (win.curr_el === null) {
+        var divel = new Element('div', { 'class': 'BufferLine' });
         win.frameel.insert(divel);
-      }
-      if (!content || !content.length) {
-        if (divel.blankpara)
-          divel.update(NBSP);
-        continue;
-      }
-      if (divel.blankpara) {
-        divel.blankpara = false;
-        divel.update();
-      }
+        win.curr_el = divel;
+        win.ends_white = true;
+    }
+
+    // Append the given events onto the end of the buffer window.
+
+    for (ix=0; ix<events.length; ix++) {
+      var text_event = events[ix];
+
+      var el;
+
+      switch (text_event.type) {
+
+      // Text
+
       /* We must munge long strings of whitespace to make sure they aren't
          collapsed. (This wouldn't be necessary if "white-space: pre-wrap"
          were widely implemented. Oh well.) ### Use if available?
@@ -704,38 +681,94 @@ function accept_one_content(arg) {
          into NBSP. Also, if a div's last span ends with a space (or the
          div has no spans), and a new span begins with a space, turn that
          into a NBSP. */
-      for (sx=0; sx<content.length; sx++) {
-        var rdesc = content[sx];
-        var rstyle, rtext, rlink;
-        if (rdesc.length === undefined) {
-          rstyle = rdesc.style;
-          rtext = rdesc.text;
-          rlink = rdesc.hyperlink;
+      case "text":
+
+        if (text_event.data.length == 0)
+          break;
+
+        // If in a div, add a style span
+        if (win.curr_el.tagName == 'DIV') {
+          el = new Element('span',
+            { 'class': 'Style_' + win.curr_style } );
+          win.curr_el.insert(el);
+          win.curr_el = el;
         }
-        else {
-          rstyle = rdesc;
-          sx++;
-          rtext = content[sx];
-          rlink = undefined;
+
+        // Create hyperlink
+        if (win.curr_hyperlink !== null) {
+          el = new Element('a',
+            { 'href': '#' } );
+          el.onclick = build_evhan_hyperlink(win.id, win.curr_hyperlink);
+          win.curr_el.insert(el);
+          win.curr_el = el;
         }
-        var el = new Element('span',
-          { 'class': 'Style_' + rstyle } );
-        rtext = rtext.replace(regex_long_whitespace, func_long_whitespace);
-        if (divel.endswhite) {
+
+        var rtext = text_event.data.replace(regex_long_whitespace, func_long_whitespace);
+        if (win.ends_white) {
           rtext = rtext.replace(regex_initial_whitespace, NBSP);
         }
-        if (rlink == undefined) {
-          insert_text(el, rtext);
+        insert_text(win.curr_el, rtext);
+        win.ends_white = regex_final_whitespace.test(rtext);
+
+        break;
+
+      // Paragraph break
+
+      case "paragraph":
+
+        // Close last paragraph.
+        // We have to drop a NBSP into empty paragraphs -- otherwise
+        // they'd collapse
+        var divel = last_child_of(win.frameel);
+        if (divel.childElements().length == 0) {
+          divel.update(NBSP);
         }
-        else {
-          var ael = new Element('a',
-            { 'href': '#' } );
-          insert_text(ael, rtext);
-          ael.onclick = build_evhan_hyperlink(win.id, rlink);
-          el.insert(ael);
+
+        // Create new paragraph
+        el = new Element('div', { 'class': 'BufferLine' })
+        win.frameel.insert(el);
+        win.curr_el = el;
+        win.ends_white = true;
+        break;
+
+      // Style change
+
+      case "style":
+
+        if (text_event.data === win.curr_style)
+          break;
+
+        win.curr_style = text_event.data;
+
+        // Get out of the current hyperlink and style
+        // TODO
+        if (win.curr_el.tagName == 'A') {
+          win.curr_el = win.curr_el.up();
         }
-        divel.insert(el);
-        divel.endswhite = regex_final_whitespace.test(rtext);
+
+        if (win.curr_el.tagName == 'SPAN') {
+          win.curr_el = win.curr_el.up();
+        }
+
+        break;
+
+      // Hyperlink change
+      //
+      // Hyperlinks are always contained inside style spans
+
+      case "hyperlink":
+
+        if (text_event.data === win.curr_hyperlink)
+          break;
+
+        win.curr_hyperlink = text_event.data;
+
+        // Get out of the current hyperlink
+        if (win.curr_el.tagName == 'A') {
+          win.curr_el = win.curr_el.up();
+        }
+
+        break;
       }
     }
 

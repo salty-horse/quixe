@@ -322,9 +322,8 @@ function update() {
 
         switch (win.type) {
         case Const.wintype_TextBuffer:
-            gli_window_buffer_deaccumulate(win);
             if (win.content.length) {
-                obj.text = win.content.slice(0);
+                obj.text_events = win.content.slice(0);
                 win.content.length = 0;
                 useobj = true;
             }
@@ -332,8 +331,8 @@ function update() {
                 obj.clear = true;
                 win.clearcontent = false;
                 useobj = true;
-                if (!obj.text) {
-                    obj.text = [];
+                if (!obj.text_events) {
+                    obj.text_events = [];
                 }
             }
             break;
@@ -356,14 +355,8 @@ function update() {
                              && lineobj.hyperlinks[cx] == lasthyperlink; 
                          cx++) { }
                     if (lastpos < cx) {
-                        if (!lasthyperlink) {
-                            ls.push(StyleNameMap[laststyle]);
-                            ls.push(lineobj.chars.slice(lastpos, cx).join(''));
-                        }
-                        else {
-                            robj = { style:StyleNameMap[laststyle], text:lineobj.chars.slice(lastpos, cx).join(''), hyperlink:lasthyperlink };
-                            ls.push(robj);
-                        }
+                        robj = { style:StyleNameMap[laststyle], text:lineobj.chars.slice(lastpos, cx).join(''), hyperlink:lasthyperlink };
+                        ls.push(robj);
                         lastpos = cx;
                     }
                 }
@@ -1180,7 +1173,7 @@ function gli_new_window(type, rock) {
     win.str = gli_stream_open_window(win);
     win.echostr = null;
     win.style = Const.style_Normal;
-    win.hyperlink = 0;
+    win.hyperlink = null;
 
     win.input_generation = null;
     win.linebuf = null;
@@ -1257,10 +1250,16 @@ function gli_window_put_string(win, val) {
     //### know the window type when they call this
     switch (win.type) {
     case Const.wintype_TextBuffer:
-        if (win.style != win.accumstyle
-            || win.hyperlink != win.accumhyperlink)
-            gli_window_buffer_deaccumulate(win);
-        win.accum.push(val);
+        var lines = val.split("\n");
+        var i;
+        for (i = 0; i < lines.length - 1; i++) {
+            if (lines[i].length > 0)
+                win.content.push({ type: "text", data: lines[i] });
+            win.content.push({ type: "paragraph" });
+        }
+        if (lines[i].length > 0)
+            win.content.push({ type: "text", data: lines[i] });
+
         break;
     case Const.wintype_TextGrid:
         for (ix=0; ix<val.length; ix++) {
@@ -1316,67 +1315,6 @@ function gli_window_grid_canonicalize(win) {
         return; /* outside the window */
 }
 
-/* Take the accumulation of strings (since the last style change) and
-   assemble them into a buffer window update. This must be called
-   after each style change; it must also be called right before 
-   GlkOte.update(). (Actually we call it right before win.accum.push
-   if the style has changed -- there's no need to call for *every* style
-   change if no text is being pushed out in between.)
-*/
-function gli_window_buffer_deaccumulate(win) {
-    var conta = win.content;
-    var stylename = StyleNameMap[win.accumstyle];
-    var text, ls, ix, obj, arr;
-
-    if (win.accum.length) {
-        text = win.accum.join('');
-        ls = text.split('\n');
-        for (ix=0; ix<ls.length; ix++) {
-            arr = undefined;
-            if (ix == 0) {
-                if (ls[ix]) {
-                    if (conta.length == 0) {
-                        arr = [];
-                        conta.push({ content: arr, append: true });
-                    }
-                    else {
-                        obj = conta[conta.length-1];
-                        if (!obj.content) {
-                            arr = [];
-                            obj.content = arr;
-                        }
-                        else {
-                            arr = obj.content;
-                        }
-                    }
-                }
-            }
-            else {
-                if (ls[ix]) {
-                    arr = [];
-                    conta.push({ content: arr });
-                }
-                else {
-                    conta.push({ });
-                }
-            }
-            if (arr !== undefined) {
-                if (!win.accumhyperlink) {
-                    arr.push(stylename);
-                    arr.push(ls[ix]);
-                }
-                else {
-                    arr.push({ style:stylename, text:ls[ix], hyperlink:win.accumhyperlink });
-                }
-            }
-        }
-    }
-
-    win.accum.length = 0;
-    win.accumstyle = win.style;
-    win.accumhyperlink = win.hyperlink;
-}
-
 function gli_window_close(win, recurse) {
     var wx;
     
@@ -1407,7 +1345,6 @@ function gli_window_close(win, recurse) {
             win.pair_key = null;
             break;
         case Const.wintype_TextBuffer: 
-            win.accum = null;
             win.content = null;
             break;
         case Const.wintype_TextGrid: 
@@ -1460,7 +1397,7 @@ function gli_window_rearrange(win, box) {
                 for (cx=oldwidth; cx<win.gridwidth; cx++) {
                     lineobj.chars[cx] = ' ';
                     lineobj.styles[cx] = Const.style_Normal;
-                    lineobj.hyperlinks[cx] = 0;
+                    lineobj.hyperlinks[cx] = null;
                 }
             }
         }
@@ -1980,6 +1917,10 @@ function gli_set_style(str, val) {
 
     if (str.type == strtype_Window) {
         str.win.style = val;
+
+        if (str.win.type == Const.wintype_TextBuffer)
+            str.win.content.push({ type: "style", data: StyleNameMap[val] });
+
         if (str.win.echostr)
             gli_set_style(str.win.echostr, val);
     }
@@ -1990,7 +1931,10 @@ function gli_set_hyperlink(str, val) {
         throw('gli_set_hyperlink: invalid stream');
 
     if (str.type == strtype_Window) {
-        str.win.hyperlink = val;
+        str.win.hyperlink = (val == 0) ? null : val;
+
+        str.win.content.push({ type: "hyperlink", data: str.win.hyperlink });
+
         if (str.win.echostr)
             gli_set_hyperlink(str.win.echostr, val);
     }
@@ -2188,16 +2132,6 @@ function glk_window_open(splitwin, method, size, wintype, rock) {
 
     switch (newwin.type) {
     case Const.wintype_TextBuffer:
-        /* accum is a list of strings of a given style; newly-printed text
-           is pushed onto the list. accumstyle is the style of that text.
-           Anything printed in a different style (or hyperlink value)
-           triggers a call to gli_window_buffer_deaccumulate, which cleans
-           out accum and adds the results to the content array. The content
-           is in GlkOte format.
-        */
-        newwin.accum = [];
-        newwin.accumstyle = null;
-        newwin.accumhyperlink = 0;
         newwin.content = [];
         newwin.clearcontent = false;
         break;
@@ -2462,9 +2396,6 @@ function glk_window_clear(win) {
 
     switch (win.type) {
     case Const.wintype_TextBuffer:
-        win.accum.length = 0;
-        win.accumstyle = null;
-        win.accumhyperlink = 0;
         win.content.length = 0;
         win.clearcontent = true;
         break;
@@ -2477,7 +2408,7 @@ function glk_window_clear(win) {
             for (cx=0; cx<win.gridwidth; cx++) {
                 lineobj.chars[cx] = ' ';
                 lineobj.styles[cx] = Const.style_Normal;
-                lineobj.hyperlinks[cx] = 0;
+                lineobj.hyperlinks[cx] = null;
             }
         }
         break;
@@ -2967,7 +2898,7 @@ function glk_cancel_line_event(win, eventref) {
     }
 
     var input = "";
-    var ix, val;
+    var ix, val, prev_style;
 
     if (current_partial_inputs) {
         val = current_partial_inputs[win.disprock];
@@ -2978,12 +2909,12 @@ function glk_cancel_line_event(win, eventref) {
     if (input.length > win.linebuf.length)
         input = input.slice(0, win.linebuf.length);
 
-    ix = win.style;
+    prev_style = win.style;
     gli_set_style(win.str, Const.style_Input);
     gli_window_put_string(win, input+"\n");
     if (win.echostr)
         glk_put_jstring_stream(win.echostr, input+"\n");
-    gli_set_style(win.str, ix);
+    gli_set_style(win.str, prev_style);
 
     for (ix=0; ix<input.length; ix++)
         win.linebuf[ix] = input.charCodeAt(ix);
