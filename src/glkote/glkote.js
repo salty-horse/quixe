@@ -668,8 +668,37 @@ function accept_one_content(arg) {
       var textarg = text[ix];
       var content = textarg.content;
       var divel = null;
+      var imgel = null;
+      var image_inline = false;
+      var float_side = "";
+
+      if (textarg.image) {
+          imgel = new Element('img');
+          imgel.writeAttribute("src", textarg.image);
+
+          switch (textarg.align) {
+          case "inline_up":
+              textarg.append = true;
+              imgel.setStyle({ "vertical-align": "text-top" });
+              break;
+          case "inline_down":
+              textarg.append = true;
+              imgel.setStyle({ "vertical-align": "text-bottom" });
+              break;
+          case "inline_center":
+              textarg.append = true;
+              imgel.setStyle({ "vertical-align": "middle" });
+              break;
+          }
+
+          if (textarg.width)
+              imgel.setStyle({ width: textarg.width });
+          if (textarg.height)
+              imgel.setStyle({ height: textarg.height });
+      }
+
       if (textarg.append) {
-        if (!content || !content.length)
+        if ((!content || !content.length) && !textarg.image)
           continue;
         divel = last_child_of(win.frameel);
       }
@@ -680,6 +709,20 @@ function accept_one_content(arg) {
         divel.endswhite = true;
         win.frameel.insert(divel);
       }
+
+      // Insert the image
+      if (textarg.image) { 
+          if (textarg.append)
+              divel.insert(imgel);
+
+          // Create a clear:both div above the current one,
+          // then float a new one with the image
+          else {
+              // TODO
+          }
+          continue;
+      }
+
       if (!content || !content.length) {
         if (divel.blankpara)
           divel.update(NBSP);
