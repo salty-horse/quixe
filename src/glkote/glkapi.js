@@ -356,14 +356,8 @@ function update() {
                              && lineobj.hyperlinks[cx] == lasthyperlink; 
                          cx++) { }
                     if (lastpos < cx) {
-                        if (!lasthyperlink) {
-                            ls.push(StyleNameMap[laststyle]);
-                            ls.push(lineobj.chars.slice(lastpos, cx).join(''));
-                        }
-                        else {
-                            robj = { style:StyleNameMap[laststyle], text:lineobj.chars.slice(lastpos, cx).join(''), hyperlink:lasthyperlink };
-                            ls.push(robj);
-                        }
+                        robj = { style:StyleNameMap[laststyle], text:lineobj.chars.slice(lastpos, cx).join(''), hyperlink:lasthyperlink };
+                        ls.push(robj);
                         lastpos = cx;
                     }
                 }
@@ -1180,7 +1174,7 @@ function gli_new_window(type, rock) {
     win.str = gli_stream_open_window(win);
     win.echostr = null;
     win.style = Const.style_Normal;
-    win.hyperlink = 0;
+    win.hyperlink = null;
 
     win.input_generation = null;
     win.linebuf = null;
@@ -1362,12 +1356,7 @@ function gli_window_buffer_deaccumulate(win) {
             }
 
             if (arr !== undefined) {
-                if (!win.accumhyperlink) {
-                    arr.push({ style:stylename, text:ls[ix] });
-                }
-                else {
-                    arr.push({ style:stylename, text:ls[ix], hyperlink:win.accumhyperlink });
-                }
+                arr.push({ style:stylename, text:ls[ix], hyperlink:win.accumhyperlink });
             }
         }
     }
@@ -1460,7 +1449,7 @@ function gli_window_rearrange(win, box) {
                 for (cx=oldwidth; cx<win.gridwidth; cx++) {
                     lineobj.chars[cx] = ' ';
                     lineobj.styles[cx] = Const.style_Normal;
-                    lineobj.hyperlinks[cx] = 0;
+                    lineobj.hyperlinks[cx] = null;
                 }
             }
         }
@@ -1990,7 +1979,7 @@ function gli_set_hyperlink(str, val) {
         throw('gli_set_hyperlink: invalid stream');
 
     if (str.type == strtype_Window) {
-        str.win.hyperlink = val;
+        str.win.hyperlink = (val == 0) ? null : val;
         if (str.win.echostr)
             gli_set_hyperlink(str.win.echostr, val);
     }
@@ -2197,7 +2186,7 @@ function glk_window_open(splitwin, method, size, wintype, rock) {
         */
         newwin.accum = [];
         newwin.accumstyle = null;
-        newwin.accumhyperlink = 0;
+        newwin.accumhyperlink = null;
         newwin.content = [];
         newwin.clearcontent = false;
         break;
@@ -2464,7 +2453,7 @@ function glk_window_clear(win) {
     case Const.wintype_TextBuffer:
         win.accum.length = 0;
         win.accumstyle = null;
-        win.accumhyperlink = 0;
+        win.accumhyperlink = null;
         win.content.length = 0;
         win.clearcontent = true;
         break;

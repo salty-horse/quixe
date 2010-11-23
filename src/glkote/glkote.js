@@ -604,21 +604,13 @@ function accept_one_content(arg) {
         lineel.update();
         for (sx=0; sx<content.length; sx++) {
           var rdesc = content[sx];
-          var rstyle, rtext, rlink;
-          if (rdesc.length === undefined) {
-            rstyle = rdesc.style;
-            rtext = rdesc.text;
-            rlink = rdesc.hyperlink;
-          }
-          else {
-            rstyle = rdesc;
-            sx++;
-            rtext = content[sx];
-            rlink = undefined;
-          }
+          var rstyle = rdesc.style;
+          var rtext = rdesc.text;
+          var rlink = rdesc.hyperlink;
+
           var el = new Element('span',
             { 'class': 'Style_' + rstyle } );
-          if (rlink == undefined) {
+          if (rlink == null) {
             insert_text(el, rtext);
           }
           else {
@@ -717,7 +709,7 @@ function accept_one_content(arg) {
         if (divel.endswhite) {
           rtext = rtext.replace(regex_initial_whitespace, NBSP);
         }
-        if (rlink == undefined) {
+        if (rlink == null) {
           insert_text(el, rtext);
         }
         else {
