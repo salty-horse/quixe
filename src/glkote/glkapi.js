@@ -2043,7 +2043,7 @@ function glk_gestalt_ext(sel, val, arr) {
         return 1;
 
     case 6: // gestalt_Graphics
-        return 0;
+        return 1;
 
     case 7: // gestalt_DrawImage
         return 1;
