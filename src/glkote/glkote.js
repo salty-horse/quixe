@@ -620,10 +620,8 @@ function accept_one_content(arg) {
             insert_text(el, rtext);
           }
           else {
-            var ael = new Element('a',
-              { 'href': '#' } );
+            ael = build_hyperlink(win.id, rlink);
             insert_text(ael, rtext);
-            ael.onclick = build_evhan_hyperlink(win.id, rlink);
             el.insert(ael);
           }
           lineel.insert(el);
@@ -655,13 +653,37 @@ function accept_one_content(arg) {
       win.curr_el = null;
     }
 
-    // Create an initial paragraph
-    if (win.curr_el === null) {
-        var divel = new Element('div', { 'class': 'BufferLine' });
-        win.frameel.insert(divel);
-        win.curr_el = divel;
+    // Helper function for inline data insertion
+    function stylize_line() {
+
+        // If in a div, add a style span
+        if (win.curr_el.tagName == 'DIV') {
+          el = new Element('span',
+            { 'class': 'Style_' + win.curr_style } );
+          win.curr_el.insert(el);
+          win.curr_el = el;
+        }
+
+        // Create hyperlink
+        if (win.curr_hyperlink !== null) {
+          el = build_hyperlink(win.id, win.curr_hyperlink);
+          win.curr_el.insert(el);
+          win.curr_el = el;
+        }
+    }
+
+    // Helper function to create a new paragraph
+    function start_new_paragraph() {
+
+        var el = new Element('div', { 'class': 'BufferLine' })
+        win.frameel.insert(el);
+        win.curr_el = el;
         win.ends_white = true;
     }
+
+    // Create an initial paragraph
+    if (win.curr_el === null)
+        start_new_paragraph();
 
     // Append the given events onto the end of the buffer window.
 
@@ -686,22 +708,7 @@ function accept_one_content(arg) {
         if (text_event.data.length == 0)
           break;
 
-        // If in a div, add a style span
-        if (win.curr_el.tagName == 'DIV') {
-          el = new Element('span',
-            { 'class': 'Style_' + win.curr_style } );
-          win.curr_el.insert(el);
-          win.curr_el = el;
-        }
-
-        // Create hyperlink
-        if (win.curr_hyperlink !== null) {
-          el = new Element('a',
-            { 'href': '#' } );
-          el.onclick = build_evhan_hyperlink(win.id, win.curr_hyperlink);
-          win.curr_el.insert(el);
-          win.curr_el = el;
-        }
+        stylize_line();
 
         var rtext = text_event.data.replace(regex_long_whitespace, func_long_whitespace);
         if (win.ends_white) {
@@ -724,11 +731,8 @@ function accept_one_content(arg) {
           divel.update(NBSP);
         }
 
-        // Create new paragraph
-        el = new Element('div', { 'class': 'BufferLine' })
-        win.frameel.insert(el);
-        win.curr_el = el;
-        win.ends_white = true;
+        start_new_paragraph();
+
         break;
 
       // Style change
@@ -765,6 +769,88 @@ function accept_one_content(arg) {
         // Get out of the current hyperlink
         if (win.curr_el.tagName == 'A') {
           win.curr_el = win.curr_el.up();
+        }
+
+        break;
+
+      // Flow break
+
+      case "flow_break":
+
+        // Check we're at a new paragraph, or create one.
+        var divel = last_child_of(win.frameel);
+        if (divel.childElements().length != 0) {
+          start_new_paragraph();
+        }
+
+        // Add a clear:both before the paragraph
+        var clearel = new Element('div',
+          { 'style': 'clear: both' });
+        win.curr_el.insert({ before: clearel });
+
+        break;
+
+      // Images
+
+      case "image":
+
+        var image_inline = false;
+        var float_side = "";
+
+        imgel = new Element('img');
+        imgel.writeAttribute("src", text_event.data);
+
+        switch (text_event.align) {
+        case "inline_up":
+          image_inline = true;
+          imgel.setStyle({ "vertical-align": "text-top" });
+          break;
+        case "inline_down":
+          image_inline = true;
+          imgel.setStyle({ "vertical-align": "text-bottom" });
+          break;
+        case "inline_center":
+          image_inline = true;
+          imgel.setStyle({ "vertical-align": "middle" });
+          break;
+        case "margin_left":
+          imgel.setStyle({ "float": "left" });
+          break;
+        case "margin_right":
+          imgel.setStyle({ "float": "right" });
+          break;
+        }
+
+        if (text_event.width)
+          imgel.setStyle({ width: text_event.width });
+        if (text_event.height)
+          imgel.setStyle({ height: text_event.height });
+
+        if (image_inline) {
+          
+          stylize_line();
+
+          win.curr_el.insert(imgel);
+
+        // Margin-aligned image
+        } else {
+
+          // Make sure the line is empty. Otherwise, do nothing
+          if (last_child_of(win.frameel) !== win.curr_el ||
+            win.curr_el.childElements().length != 0)
+            break;
+
+          // Wrap image in hyperlink
+          if (win.curr_hyperlink) {
+            ael = build_hyperlink(win.id, win.curr_hyperlink);
+            el.insert(imgel);
+          }
+
+          // Put a clear:both div before the current line
+          clearel = new Element('div',
+            { 'style': 'clear: both' });
+          win.curr_el.insert({ before: clearel });
+          win.curr_el.insert({ before: imgel });
         }
 
         break;
@@ -1692,15 +1778,15 @@ function evhan_window_scroll(frameel) {
   }
 }
 
-/* Event handler constructor: report a click on a hyperlink
+/* Hyperlink constructor w/ event handler: report a click on a hyperlink
    (This is a factory that returns an appropriate handler function, for
    stupid Javascript closure reasons.)
 
    Generate the appropriate event for a hyperlink click. Return false,
    to suppress the default HTML action of hyperlinks.
 */
-function build_evhan_hyperlink(winid, linkval) {
-  return function() {
+function build_hyperlink(winid, linkval) {
+  function handler() {
     var win = windowdic.get(winid);
     if (!win)
       return false;
@@ -1709,6 +1795,12 @@ function build_evhan_hyperlink(winid, linkval) {
     send_response('hyperlink', win, linkval);
     return false;
   };
+
+  var ael = new Element('a',
+    { 'href': '#' } );
+  ael.onclick = handler;
+
+  return ael;
 }
 
 /* ---------------------------------------------- */

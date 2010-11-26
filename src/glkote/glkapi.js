@@ -48,6 +48,9 @@ Glk = function() {
 /* The VM interface object. */
 var VM = null;
 
+/* The Blorb interface object. */
+var Blorb = null;
+
 var has_exited = false;
 var ui_disabled = false;
 var event_generation = 0;
@@ -60,6 +63,10 @@ var current_partial_outputs = null;
    The vm_options argument must have a vm_options.vm field, which must be an
    appropriate VM interface object. (For example, Quixe.) This must have
    init() and resume() methods.
+
+   The vm_options argument may also have a vm_options.blorb field, which must
+   be an appropriate Blorb interface object. (For example, GiBlorb.) This must
+   have the load_resource() method, and already have a Blorb file loaded.
 
    The vm_options argument is also passed through to GlkOte as the game
    interface object. It can be used to affect some GlkOte display options,
@@ -74,6 +81,8 @@ function init(vm_options) {
         GiDispa.set_vm(VM);
 
     vm_options.accept = accept_ui_event;
+
+    Blorb = vm_options.blorb;
 
     GlkOte.init(vm_options);
 }
@@ -555,10 +564,16 @@ var Const = {
     stylehint_ReverseColor : 9,
     stylehint_NUMHINTS : 10,
 
-      stylehint_just_LeftFlush : 0,
-      stylehint_just_LeftRight : 1,
-      stylehint_just_Centered : 2,
-      stylehint_just_RightFlush : 3
+    stylehint_just_LeftFlush : 0,
+    stylehint_just_LeftRight : 1,
+    stylehint_just_Centered : 2,
+    stylehint_just_RightFlush : 3,
+
+    imagealign_InlineUp : 1,
+    imagealign_InlineDown : 2,
+    imagealign_InlineCenter : 3,
+    imagealign_MarginLeft : 4,
+    imagealign_MarginRight : 5
 };
 
 var KeystrokeNameMap = {
@@ -2031,7 +2046,7 @@ function glk_gestalt_ext(sel, val, arr) {
         return 0;
 
     case 7: // gestalt_DrawImage
-        return 0;
+        return 1;
 
     case 8: // gestalt_Sound
         return 0;
@@ -2998,21 +3013,75 @@ function glk_image_get_info(imgid, widthref, heightref) {
     return 0;
 }
 
+function gli_put_picture_text(win, imgid, val1, val2, width, height) {
+    var res = Blorb.load_resource("Pict", imgid);
+    if (res == null)
+        return 0;
+
+    var mime_type = "image/" + (res.type == "JPEG" ? "jpeg" : "png");
+    var data_uri = "data:" + mime_type + ";base64," + btoa(String.fromCharCode.apply(null, res.data));
+
+    var align;
+    switch (val1) {
+    case Const.imagealign_InlineUp:
+        align = "inline_up";
+        break;
+    case Const.imagealign_InlineDown:
+        align = "inline_down";
+        break;
+    case Const.imagealign_InlineCenter:
+        align = "inline_center";
+        break;
+    case Const.imagealign_MarginLeft:
+        align = "margin_left";
+        break;
+    case Const.imagealign_MarginRight:
+        align = "margin_right";
+        break;
+    }
+
+    win.content.push({ type: 'image', data: data_uri, align: align, width: width, height: height });
+
+    return 1;
+}
+
 function glk_image_draw(win, imgid, val1, val2) {
     if (!win)
         throw('glk_image_draw: invalid window');
+
+    switch (win.type) {
+    case Const.wintype_TextBuffer:
+        return gli_put_picture_text(win, imgid, val1, val2, null, null);
+        break;
+    case Const.wintype_Graphics:
+        break;
+    }
+
     return 0;
 }
 
 function glk_image_draw_scaled(win, imgid, val1, val2, width, height) {
     if (!win)
         throw('glk_image_draw_scaled: invalid window');
+
+    switch (win.type) {
+    case Const.wintype_TextBuffer:
+        return gli_put_picture_text(win, imgid, val1, val2, width, height);
+        break;
+    case Const.wintype_Graphics:
+        break;
+    }
     return 0;
 }
 
 function glk_window_flow_break(win) {
     if (!win)
         throw('glk_window_flow_break: invalid window');
+
+	if (win.type !== Const.wintype_TextBuffer)
+		return;
+
+	win.content.push({ type: "flow_break" });
 }
 
 function glk_window_erase_rect(win, left, top, width, height) {
